@@ -1,5 +1,5 @@
-// ===== MK ANIME - COMPLETE APP.JS =====
-// Powered by MK BOTS
+// ===== MK ANIME - COMPLETE APP.JS V2 =====
+// Powered by MK BOTS - Now supports multiple TG formats
 
 let allAnime = [];
 let currentTab = 'home';
@@ -11,7 +11,6 @@ async function fetchFromTelegram(){
   document.getElementById('animeGrid').innerHTML = '';
   
   try{
-    // Using free CORS proxy - no PHP needed
     const proxy = 'https://api.allorigins.win/raw?url=';
     const tgUrl = `https://api.telegram.org/bot${CONFIG.TG_BOT_TOKEN}/getUpdates?limit=100`;
     const response = await fetch(proxy + encodeURIComponent(tgUrl));
@@ -31,54 +30,62 @@ async function fetchFromTelegram(){
   document.getElementById('loading').style.display = 'none';
 }
 
-// ===== PARSE TELEGRAM MESSAGES =====
+// ===== SMART PARSER - SUPPORTS ALL FORMATS =====
 async function parseTelegramMessages(messages){
   allAnime = [];
   
   for(let msg of messages){
-    // Check if message is from our channel and has video
+    // Check if from our channel
     if(msg.channel_post && msg.channel_post.chat && msg.channel_post.chat.id == CONFIG.TG_CHANNEL){
-      if(msg.channel_post.video){
-        let post = msg.channel_post;
-        let caption = post.caption || '';
-        let file_id = post.video.file_id;
+      let post = msg.channel_post;
+      
+      // Support both video AND document uploads
+      let file = post.video || post.document;
+      if(!file) continue;
+      
+      let file_id = file.file_id;
+      let caption = post.caption || '';
+      let fileName = file.file_name || '';
+      
+      // Try caption first, then filename
+      let textToParse = caption || fileName;
+      if(!textToParse) continue;
+      
+      // UNIVERSAL PARSER - Handles all formats
+      let parsed = parseAnimeFormat(textToParse);
+      if(!parsed) continue;
+      
+      let {name, episode, season} = parsed;
+      
+      // Get actual video URL from Telegram
+      try{
+        const fileProxy = 'https://api.allorigins.win/raw?url=';
+        const fileUrl = `https://api.telegram.org/bot${CONFIG.TG_BOT_TOKEN}/getFile?file_id=${file_id}`;
+        const fileRes = await fetch(fileProxy + encodeURIComponent(fileUrl));
+        const fileData = await fileRes.json();
         
-        // Parse: "Attack on Titan - Episode 1" or "Attack on Titan - Ep 1"
-        let match = caption.match(/(.+?)\s*-\s*(?:Episode|Ep\.?)\s*(\d+)/i);
-        if(match){
-          let name = match[1].trim();
-          let ep = parseInt(match[2]);
+        if(fileData.ok && fileData.result.file_path){
+          const videoUrl = `https://api.telegram.org/file/bot${CONFIG.TG_BOT_TOKEN}/${fileData.result.file_path}`;
           
-          // Get actual video URL from Telegram
-          try{
-            const fileProxy = 'https://api.allorigins.win/raw?url=';
-            const fileUrl = `https://api.telegram.org/bot${CONFIG.TG_BOT_TOKEN}/getFile?file_id=${file_id}`;
-            const fileRes = await fetch(fileProxy + encodeURIComponent(fileUrl));
-            const fileData = await fileRes.json();
-            
-            if(fileData.ok && fileData.result.file_path){
-              const videoUrl = `https://api.telegram.org/file/bot${CONFIG.TG_BOT_TOKEN}/${fileData.result.file_path}`;
-              
-              let anime = allAnime.find(a=>a.name.toLowerCase()===name.toLowerCase());
-              if(!anime){
-                anime = {name, episodes:[], thumb:'', rating:0, genres:[], synopsis:'', year:2024};
-                allAnime.push(anime);
-              }
-              
-              // Check if episode already exists
-              if(!anime.episodes.find(e=>e.ep===ep)){
-                anime.episodes.push({ep, fileUrl: videoUrl});
-              }
-            }
-          }catch(e){
-            console.error('File fetch error:',e);
+          let animeName = season? `${name} S${season}` : name;
+          let anime = allAnime.find(a=>a.name.toLowerCase()===animeName.toLowerCase());
+          if(!anime){
+            anime = {name: animeName, episodes:[], thumb:'', rating:0, genres:[], synopsis:'', year:2024};
+            allAnime.push(anime);
+          }
+          
+          // Avoid duplicate episodes
+          if(!anime.episodes.find(e=>e.ep===episode)){
+            anime.episodes.push({ep: episode, fileUrl: videoUrl});
           }
         }
+      }catch(e){
+        console.error('File fetch error:',e);
       }
     }
   }
   
-  // Sort episodes for each anime
+  // Sort episodes
   allAnime.forEach(a=>a.episodes.sort((x,y)=>x.ep-y.ep));
   
   if(allAnime.length > 0){
@@ -89,12 +96,80 @@ async function parseTelegramMessages(messages){
   }
 }
 
+// ===== UNIVERSAL FORMAT DETECTOR =====
+function parseAnimeFormat(text){
+  text = text.trim();
+  
+  // Pattern 1: [S01-E01] Name or [S01E01] Name
+  let match = text.match(/\[S(\d+)[-]?E(\d+)\]\s*(.+?)(?:\.mkv|\.mp4|$)/i);
+  if(match){
+    return {
+      season: parseInt(match[1]),
+      episode: parseInt(match[2]),
+      name: match[3].replace(/\[.*?\]/g,'').replace(/\+.*$/,'').trim()
+    };
+  }
+  
+  // Pattern 2: Name S2 EP06 or Name S2E6
+  match = text.match(/(.+?)\s*S(\d+)\s*E[P]?(\d+)/i);
+  if(match){
+    return {
+      name: match[1].trim(),
+      season: parseInt(match[2]),
+      episode: parseInt(match[3])
+    };
+  }
+  
+  // Pattern 3: Name 1x05 or Name 2x10
+  match = text.match(/(.+?)\s*(\d+)x(\d+)/i);
+  if(match){
+    return {
+      name: match[1].trim(),
+      season: parseInt(match[2]),
+      episode: parseInt(match[3])
+    };
+  }
+  
+  // Pattern 4: Name Episode - 1 or Name - Episode 1
+  match = text.match(/(.+?)\s*(?:Episode|Ep\.?)\s*[-]?\s*(\d+)/i);
+  if(match){
+    return {
+      name: match[1].trim(),
+      season: null,
+      episode: parseInt(match[2])
+    };
+  }
+  
+  // Pattern 5: Name - Episode 1
+  match = text.match(/(.+?)\s*-\s*(?:Episode|Ep\.?)\s*(\d+)/i);
+  if(match){
+    return {
+      name: match[1].trim(),
+      season: null,
+      episode: parseInt(match[2])
+    };
+  }
+  
+  // Pattern 6: Name EP06.mp4
+  match = text.match(/(.+?)\s*EP(\d+)(?:\.mp4|\.mkv|$)/i);
+  if(match){
+    return {
+      name: match[1].trim(),
+      season: null,
+      episode: parseInt(match[2])
+    };
+  }
+  
+  return null;
+}
+
 // ===== ENRICH WITH FREE API =====
 async function enrichAnimeData(){
   for(let anime of allAnime){
     try{
-      // Fetch from Jikan API - MyAnimeList
-      let res = await fetch(`${CONFIG.ANIME_API}/anime?q=${encodeURIComponent(anime.name)}&limit=1`);
+      // Remove S2 from name for API search
+      let searchName = anime.name.replace(/\s*S\d+$/i,'').trim();
+      let res = await fetch(`${CONFIG.ANIME_API}/anime?q=${encodeURIComponent(searchName)}&limit=1`);
       let data = await res.json();
       
       if(data.data && data.data[0]){
@@ -142,17 +217,6 @@ function loadSampleAnime(){
       synopsis: "A young boy becomes a demon slayer to save his sister.",
       episodes: [
         {ep: 1, fileUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'}
-      ]
-    },
-    {
-      name: "Jujutsu Kaisen",
-      thumb: "https://cdn.myanimelist.net/images/anime/1171/109222.jpg",
-      rating: 8.8,
-      genres: ['action','fantasy','horror'],
-      year: 2020,
-      synopsis: "Students battle cursed spirits in modern Japan.",
-      episodes: [
-        {ep: 1, fileUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4'}
       ]
     }
   ];
@@ -305,7 +369,6 @@ function playAnime(name,epIndex){
   player.src = episode.fileUrl;
   document.getElementById('playerTitle').innerText = `${anime.name} - Episode ${episode.ep}`;
   
-  // Load episode list
   let epHTML='';
   anime.episodes.forEach((ep,i)=>{
     epHTML+=`<div class="an-episode-item ${i===epIndex?'active':''}" onclick="playAnime('${name.replace(/'/g,"\\'")}',${i})">
