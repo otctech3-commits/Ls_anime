@@ -1,3 +1,6 @@
+// ===== MK ANIME - COMPLETE APP.JS =====
+// Powered by MK BOTS
+
 let allAnime = [];
 let currentTab = 'home';
 let currentFilter = 'all';
@@ -6,83 +9,116 @@ let currentFilter = 'all';
 async function fetchFromTelegram(){
   document.getElementById('loading').style.display = 'block';
   document.getElementById('animeGrid').innerHTML = '';
-
+  
   try{
-    // Method 1: Using Telegram Bot API
-    // Note: Direct API calls blocked by CORS. Use backend proxy.
-    // For demo, we'll use sample data. In production, create PHP/Node backend.
-
-    // Simulated fetch - Replace with your backend endpoint
-    const response = await fetch(`https://api.telegram.org/bot${CONFIG.TG_BOT_TOKEN}/getUpdates`);
+    // Using free CORS proxy - no PHP needed
+    const proxy = 'https://api.allorigins.win/raw?url=';
+    const tgUrl = `https://api.telegram.org/bot${CONFIG.TG_BOT_TOKEN}/getUpdates?limit=100`;
+    const response = await fetch(proxy + encodeURIComponent(tgUrl));
     const data = await response.json();
-
-    // Parse messages from your channel
-    if(data.ok && data.result){
-      parseTelegramMessages(data.result);
+    
+    if(data.ok && data.result && data.result.length > 0){
+      await parseTelegramMessages(data.result);
     }else{
-      // Fallback: Load sample data
+      console.log('No TG posts found, loading samples');
       loadSampleAnime();
     }
   }catch(err){
-    console.error('TG Fetch Error:', err);
-    loadSampleAnime(); // Load demo data
+    console.error('TG Error:', err);
+    loadSampleAnime();
   }
-
+  
   document.getElementById('loading').style.display = 'none';
 }
 
 // ===== PARSE TELEGRAM MESSAGES =====
-function parseTelegramMessages(messages){
+async function parseTelegramMessages(messages){
   allAnime = [];
-  messages.forEach(msg=>{
-    if(msg.channel_post && msg.channel_post.video){
-      // Extract anime info from caption
-      let caption = msg.channel_post.caption || '';
-      let video = msg.channel_post.video;
-
-      // Parse format: "Anime Name - Episode 1"
-      let match = caption.match(/(.+?)\s*-\s*Episode\s*(\d+)/i);
-      if(match){
-        let name = match[1].trim();
-        let ep = parseInt(match[2]);
-        let fileId = video.file_id;
-
-        // Check if anime exists
-        let anime = allAnime.find(a=>a.name===name);
-        if(!anime){
-          anime = {name, episodes:[], thumb:'', rating:0, genres:[]};
-          allAnime.push(anime);
+  
+  for(let msg of messages){
+    // Check if message is from our channel and has video
+    if(msg.channel_post && msg.channel_post.chat && msg.channel_post.chat.id == CONFIG.TG_CHANNEL){
+      if(msg.channel_post.video){
+        let post = msg.channel_post;
+        let caption = post.caption || '';
+        let file_id = post.video.file_id;
+        
+        // Parse: "Attack on Titan - Episode 1" or "Attack on Titan - Ep 1"
+        let match = caption.match(/(.+?)\s*-\s*(?:Episode|Ep\.?)\s*(\d+)/i);
+        if(match){
+          let name = match[1].trim();
+          let ep = parseInt(match[2]);
+          
+          // Get actual video URL from Telegram
+          try{
+            const fileProxy = 'https://api.allorigins.win/raw?url=';
+            const fileUrl = `https://api.telegram.org/bot${CONFIG.TG_BOT_TOKEN}/getFile?file_id=${file_id}`;
+            const fileRes = await fetch(fileProxy + encodeURIComponent(fileUrl));
+            const fileData = await fileRes.json();
+            
+            if(fileData.ok && fileData.result.file_path){
+              const videoUrl = `https://api.telegram.org/file/bot${CONFIG.TG_BOT_TOKEN}/${fileData.result.file_path}`;
+              
+              let anime = allAnime.find(a=>a.name.toLowerCase()===name.toLowerCase());
+              if(!anime){
+                anime = {name, episodes:[], thumb:'', rating:0, genres:[], synopsis:'', year:2024};
+                allAnime.push(anime);
+              }
+              
+              // Check if episode already exists
+              if(!anime.episodes.find(e=>e.ep===ep)){
+                anime.episodes.push({ep, fileUrl: videoUrl});
+              }
+            }
+          }catch(e){
+            console.error('File fetch error:',e);
+          }
         }
-        anime.episodes.push({ep, fileId, fileUrl:''});
       }
     }
-  });
-
-  // Fetch details from Jikan API
-  enrichAnimeData();
+  }
+  
+  // Sort episodes for each anime
+  allAnime.forEach(a=>a.episodes.sort((x,y)=>x.ep-y.ep));
+  
+  if(allAnime.length > 0){
+    await enrichAnimeData();
+  }else{
+    console.log('No valid anime found in channel');
+    loadSampleAnime();
+  }
 }
 
 // ===== ENRICH WITH FREE API =====
 async function enrichAnimeData(){
   for(let anime of allAnime){
     try{
+      // Fetch from Jikan API - MyAnimeList
       let res = await fetch(`${CONFIG.ANIME_API}/anime?q=${encodeURIComponent(anime.name)}&limit=1`);
       let data = await res.json();
+      
       if(data.data && data.data[0]){
         let info = data.data[0];
-        anime.thumb = info.images.jpg.large_image_url;
+        anime.thumb = info.images.jpg.large_image_url || 'https://via.placeholder.com/300x400?text=No+Image';
         anime.rating = info.score || 0;
-        anime.genres = info.genres.map(g=>g.name.toLowerCase());
-        anime.synopsis = info.synopsis;
-        anime.year = info.year;
+        anime.genres = info.genres? info.genres.map(g=>g.name.toLowerCase()) : ['unknown'];
+        anime.synopsis = info.synopsis || 'No description available.';
+        anime.year = info.year || 2024;
+      }else{
+        anime.thumb = 'https://via.placeholder.com/300x400?text=No+Image';
+        anime.genres = ['unknown'];
       }
-    }catch(e){console.error('API Error:', e);}
+    }catch(e){
+      console.error('API Error for', anime.name, e);
+      anime.thumb = 'https://via.placeholder.com/300x400?text=No+Image';
+      anime.genres = ['unknown'];
+    }
   }
   renderAnime();
   updateHero();
 }
 
-// ===== SAMPLE DATA (For Testing) =====
+// ===== SAMPLE DATA FALLBACK =====
 function loadSampleAnime(){
   allAnime = [
     {
@@ -90,31 +126,34 @@ function loadSampleAnime(){
       thumb: "https://cdn.myanimelist.net/images/anime/10/47347.jpg",
       rating: 9.0,
       genres: ['action','drama','fantasy'],
+      year: 2013,
+      synopsis: "Humanity fights for survival against giant humanoid Titans.",
       episodes: [
         {ep: 1, fileUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'},
         {ep: 2, fileUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4'}
-      ],
-      synopsis: "Humanity fights for survival against giant humanoid Titans."
+      ]
     },
     {
       name: "Demon Slayer",
       thumb: "https://cdn.myanimelist.net/images/anime/1286/99889.jpg",
       rating: 8.7,
       genres: ['action','fantasy'],
+      year: 2019,
+      synopsis: "A young boy becomes a demon slayer to save his sister.",
       episodes: [
         {ep: 1, fileUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'}
-      ],
-      synopsis: "A young boy becomes a demon slayer to save his sister."
+      ]
     },
     {
       name: "Jujutsu Kaisen",
       thumb: "https://cdn.myanimelist.net/images/anime/1171/109222.jpg",
       rating: 8.8,
       genres: ['action','fantasy','horror'],
+      year: 2020,
+      synopsis: "Students battle cursed spirits in modern Japan.",
       episodes: [
         {ep: 1, fileUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4'}
-      ],
-      synopsis: "Students battle cursed spirits in modern Japan."
+      ]
     }
   ];
   renderAnime();
@@ -125,23 +164,23 @@ function loadSampleAnime(){
 function renderAnime(){
   let grid = document.getElementById('animeGrid');
   let noResults = document.getElementById('noResults');
-
+  
   let filtered = allAnime.filter(a=>{
     if(currentFilter==='all') return true;
     return a.genres && a.genres.includes(currentFilter);
   });
-
+  
   if(filtered.length===0){
     noResults.style.display='block';
     grid.innerHTML='';
     return;
   }
-
+  
   noResults.style.display='none';
   let html='';
   filtered.forEach(anime=>{
     html+=`
-      <div class="an-card" onclick="showDetails('${anime.name}')">
+      <div class="an-card" onclick="showDetails('${anime.name.replace(/'/g,"\\'")}')">
         <div class="an-card-img">
           <img src="${anime.thumb}" alt="${anime.name}" loading="lazy">
           <div class="an-card-badge">HD</div>
@@ -151,7 +190,7 @@ function renderAnime(){
           <h3 class="an-card-title">${anime.name}</h3>
           <div class="an-card-info">
             <span class="an-card-rating">★ ${anime.rating}</span>
-            <span>• ${anime.year||'2024'}</span>
+            <span>• ${anime.year}</span>
           </div>
         </div>
       </div>
@@ -179,19 +218,19 @@ function handleSearch(e){
 function searchAnime(){
   let query = document.getElementById('searchInput').value.toLowerCase();
   let filtered = allAnime.filter(a=>a.name.toLowerCase().includes(query));
-
+  
   let grid = document.getElementById('animeGrid');
   if(filtered.length===0){
     document.getElementById('noResults').style.display='block';
     grid.innerHTML='';
     return;
   }
-
+  
   document.getElementById('noResults').style.display='none';
   let html='';
   filtered.forEach(anime=>{
     html+=`
-      <div class="an-card" onclick="showDetails('${anime.name}')">
+      <div class="an-card" onclick="showDetails('${anime.name.replace(/'/g,"\\'")}')">
         <div class="an-card-img">
           <img src="${anime.thumb}" alt="${anime.name}">
           <div class="an-card-badge">HD</div>
@@ -221,7 +260,12 @@ function showTab(tab,btn){
   document.querySelectorAll('.an-nav-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   currentTab=tab;
-  // Implement tab logic
+  
+  if(tab==='trending'){
+    allAnime.sort((a,b)=>b.rating-a.rating);
+  }else if(tab==='latest'){
+    allAnime.sort((a,b)=>b.year-a.year);
+  }
   renderAnime();
 }
 
@@ -229,18 +273,18 @@ function showTab(tab,btn){
 function showDetails(name){
   let anime = allAnime.find(a=>a.name===name);
   if(!anime) return;
-
+  
   document.getElementById('detailsBody').innerHTML=`
     <div style="padding:30px;">
       <img src="${anime.thumb}" style="width:100%;height:400px;object-fit:cover;border-radius:12px;margin-bottom:20px;">
       <h2 style="font-size:32px;margin-bottom:15px;color:#ff6b6b;">${anime.name}</h2>
       <div style="display:flex;gap:20px;margin-bottom:20px;color:#9ca3af;">
         <span>★ ${anime.rating}</span>
-        <span>• ${anime.year||'2024'}</span>
+        <span>• ${anime.year}</span>
         <span>• ${anime.episodes.length} Episodes</span>
       </div>
-      <p style="color:#9ca3af;line-height:1.8;margin-bottom:30px;">${anime.synopsis||'No description available.'}</p>
-      <button onclick="playAnime('${anime.name}',0)" style="width:100%;padding:16px;background:#ff6b6b;color:#0a0e1a;border:none;border-radius:10px;font-weight:900;font-size:16px;cursor:pointer;">▶ Play Episode 1</button>
+      <p style="color:#9ca3af;line-height:1.8;margin-bottom:30px;">${anime.synopsis}</p>
+      <button onclick="playAnime('${anime.name.replace(/'/g,"\\'")}',0)" style="width:100%;padding:16px;background:#ff6b6b;color:#0a0e1a;border:none;border-radius:10px;font-weight:900;font-size:16px;cursor:pointer;">▶ Play Episode 1</button>
     </div>
   `;
   document.getElementById('detailsModal').classList.add('active');
@@ -254,28 +298,29 @@ function closeDetails(){
 function playAnime(name,epIndex){
   let anime = allAnime.find(a=>a.name===name);
   if(!anime ||!anime.episodes[epIndex]) return;
-
+  
   let episode = anime.episodes[epIndex];
   let player = document.getElementById('videoPlayer');
-
-  // If using Telegram file_id, you need backend to get file_url
-  // For demo, using direct URL
-  player.src = episode.fileUrl || episode.fileId;
-
+  
+  player.src = episode.fileUrl;
   document.getElementById('playerTitle').innerText = `${anime.name} - Episode ${episode.ep}`;
-
+  
   // Load episode list
   let epHTML='';
   anime.episodes.forEach((ep,i)=>{
-    epHTML+=`<div class="an-episode-item ${i===epIndex?'active':''}" onclick="playAnime('${name}',${i})">
+    epHTML+=`<div class="an-episode-item ${i===epIndex?'active':''}" onclick="playAnime('${name.replace(/'/g,"\\'")}',${i})">
       <strong>Episode ${ep.ep}</strong>
       <span>Click to play</span>
     </div>`;
   });
   document.getElementById('episodeList').innerHTML=epHTML;
-
+  
   document.getElementById('playerModal').classList.add('active');
   closeDetails();
+  
+  if(CONFIG.AUTO_PLAY){
+    player.play().catch(e=>console.log('Autoplay blocked:',e));
+  }
 }
 
 function closePlayer(){
@@ -289,9 +334,7 @@ window.onload=()=>{
 };
 
 // Close modals on outside click
-document.getElementById('playerModal').addEventListener('click',e=>{
-  if(e.target===e.currentTarget) closePlayer();
-});
-document.getElementById('detailsModal').addEventListener('click',e=>{
-  if(e.target===e.currentTarget) closeDetails();
+document.addEventListener('click',e=>{
+  if(e.target.id==='playerModal') closePlayer();
+  if(e.target.id==='detailsModal') closeDetails();
 });
