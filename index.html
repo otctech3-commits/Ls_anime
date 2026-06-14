@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MK Anime - Watch Free Anime HD</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <div class="an-wrapper">
+    <!-- HEADER -->
+    <header class="an-header">
+      <div class="an-logo">🎌 MK ANIME</div>
+      <div class="an-search">
+        <input type="text" id="searchInput" placeholder="Search anime..." onkeyup="handleSearch(event)">
+        <button onclick="searchAnime()">🔍</button>
+      </div>
+      <div class="an-nav">
+        <button class="an-nav-btn active" onclick="showTab('home',this)">Home</button>
+        <button class="an-nav-btn" onclick="showTab('trending',this)">Trending</button>
+        <button class="an-nav-btn" onclick="showTab('latest',this)">Latest</button>
+        <button class="an-nav-btn" onclick="window.open('https://t.me/YOUR_CHANNEL','_blank')">📢 TG Channel</button>
+      </div>
+    </header>
+
+    <!-- HERO BANNER -->
+    <div class="an-hero" id="heroSection">
+      <div class="an-hero-content">
+        <h1 id="heroTitle">Loading...</h1>
+        <p id="heroDesc">Fetching latest episodes from Telegram...</p>
+        <button class="an-watch-btn" id="heroBtn" style="display:none;">▶ Watch Now</button>
+      </div>
+    </div>
+
+    <!-- FILTER BAR -->
+    <div class="an-filters">
+      <button class="an-filter active" onclick="filterGenre('all',this)">All</button>
+      <button class="an-filter" onclick="filterGenre('action',this)">Action</button>
+      <button class="an-filter" onclick="filterGenre('romance',this)">Romance</button>
+      <button class="an-filter" onclick="filterGenre('comedy',this)">Comedy</button>
+      <button class="an-filter" onclick="filterGenre('drama',this)">Drama</button>
+      <button class="an-filter" onclick="filterGenre('fantasy',this)">Fantasy</button>
+    </div>
+
+    <!-- ANIME GRID -->
+    <div class="an-container">
+      <div class="an-loading" id="loading">🔄 Fetching from Telegram Channel...</div>
+      <div class="an-grid" id="animeGrid"></div>
+      <div class="an-no-results" id="noResults" style="display:none;">
+        <h3>😢 No anime found</h3>
+        <p>Upload more episodes to your Telegram channel</p>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="an-footer">
+      <div class="an-footer-content">
+        <p>Join our Telegram for instant updates: <a href="https://t.me/YOUR_CHANNEL" target="_blank">@YOUR_CHANNEL</a></p>
+        <p class="an-watermark">𝖕𝖔𝖜𝖊𝖗𝖊𝖉 𝖇𝖞 𝖒𝖐 𝖇𝖔𝖙𝖘</p>
+      </div>
+    </footer>
+  </div>
+
+  <!-- VIDEO PLAYER MODAL -->
+  <div class="an-modal" id="playerModal">
+    <div class="an-modal-content">
+      <button class="an-close" onclick="closePlayer()">✕</button>
+      <div class="an-player-wrapper">
+        <video id="videoPlayer" controls autoplay></video>
+        <div class="an-player-info">
+          <h2 id="playerTitle"></h2>
+          <div class="an-episode-list" id="episodeList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ANIME DETAILS MODAL -->
+  <div class="an-modal" id="detailsModal">
+    <div class="an-modal-content">
+      <button class="an-close" onclick="closeDetails()">✕</button>
+      <div id="detailsBody"></div>
+    </div>
+  </div>
+
+  <script src="assets/config.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
